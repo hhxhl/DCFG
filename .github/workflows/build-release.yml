@@ -1,0 +1,114 @@
+name: Build and Release DCFG
+
+on:
+  push:
+    branches:
+      - main
+
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Release tag, example: v1.0.0'
+        required: false
+        default: ''
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    env:
+      TZ: Asia/Shanghai
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Android NDK
+        id: setup-ndk
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r26d
+          add-to-path: true
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - name: Cache Cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            module/rust/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('module/rust/Cargo.lock') }}
+
+      - name: Build DCFG mainline release
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+          ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: |
+          chmod +x \
+            build.sh \
+            build-debug.sh \
+            build-classic.sh \
+            build-classic-debug.sh
+
+          ./build.sh
+
+      - name: Build DCFG classic release
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+          ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: |
+          ./build-classic.sh
+
+      - name: Verify release outputs
+        run: |
+          ls -lh release/
+          test -f release/DCFG-release.zip
+          test -f release/DCFG-classic-release.zip
+
+      - name: Upload mainline artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DCFG-release
+          path: release/DCFG-release.zip
+          if-no-files-found: error
+
+      - name: Upload classic artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DCFG-classic-release
+          path: release/DCFG-classic-release.zip
+          if-no-files-found: error
+
+      - name: Prepare release tag
+        if: github.event_name == 'workflow_dispatch'
+        id: release_tag
+        shell: bash
+        run: |
+          if [ -n "${{ github.event.inputs.tag_name }}" ]; then
+            TAG="${{ github.event.inputs.tag_name }}"
+          else
+            TAG="v$(date +'%Y%m%d')-${GITHUB_SHA::7}"
+          fi
+
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Publish GitHub Release
+        if: github.event_name == 'workflow_dispatch'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.release_tag.outputs.tag }}
+          name: DCFG ${{ steps.release_tag.outputs.tag }}
+          files: |
+            release/DCFG-release.zip
+            release/DCFG-classic-release.zip
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
