@@ -1,439 +1,463 @@
 # DCFG
 
-DCFG is a native-only per-app Android device virtualization runtime built on the Zygisk API.
+DCFG is a native-only per-app Zygisk runtime for Build and system property virtualization.
 
 The project focuses on:
 
-* Per-app Build and system property virtualization
-* Minimal runtime footprint
-* Native-only implementation
-* Top-app-only resetprop lifecycle control
-* dlclose-oriented runtime cleanup
+* Strict per-app scope
+* Runtime-aware resetprop virtualization
+* Minimal persistent footprint
+* Package-aware top-app lifecycle management
+* Official Zygisk API compatibility
 * NeoZygisk / KernelSU compatibility
 
-DCFG is designed to avoid global system modification whenever possible and keep spoofing effects scoped to matched target applications.
+DCFG does not use LSPosed, Java hook frameworks, or a WebUI.
 
 ---
 
-# Design Goals
+# Architecture Overview
 
-DCFG focuses on:
+DCFG consists of:
 
-* Per-app scoped virtualization
-* Avoiding persistent global modification
-* Native-only runtime design
-* Low memory footprint
-* Lightweight dlclose-oriented lifecycle
-* Flexible Build + property virtualization
-* Reduced runtime persistence compared to traditional hook-heavy solutions
+```text
+Zygisk runtime
+├── Config loader
+├── Build field virtualization
+├── Runtime property virtualization
+├── Companion resetprop runtime
+├── Top-app lifecycle monitor
+├── Config cache runtime
+└── Rust / external resetprop backend
+```
+
+The module applies virtualization only to matched target apps.
+
+Unmatched processes are allowed to dlclose early.
 
 ---
 
-# Features
-
-## Core Runtime
-
-* Official Zygisk API runtime
-* Native-only implementation
-* NeoZygisk compatible
-* KernelSU compatible
-* Per-app rule matching
-* Optional child-process rule inheritance
-* Aggressive dlclose-oriented runtime cleanup
+# Runtime Design
 
 ## Build Virtualization
 
-Supports per-app virtualization of:
+DCFG modifies Build and Build.VERSION fields inside matched app processes.
 
-* `android.os.Build`
-* `android.os.Build.VERSION`
-* Static Build field virtualization
-* Reflection-compatible Build virtualization
+Examples:
 
-DCFG dynamically supports arbitrary property keys via props, while Build virtualization currently operates on existing `android.os.Build` fields.
+```text
+Build.MODEL
+Build.DEVICE
+Build.PRODUCT
+Build.FINGERPRINT
+Build.VERSION.SDK_INT
+```
+
+The modification is per-process and does not globally change the system.
 
 ---
 
-# Property Virtualization
+## Runtime resetprop Virtualization
 
-DCFG supports multiple property virtualization modes.
+DCFG uses a companion-managed resetprop runtime.
 
-## resetprop Mode
+App processes do not directly own resetprop lifecycle.
 
-Recommended primary mode.
+Instead:
 
-Features:
+```text
+app process
+    ↓
+companion acquire request
+    ↓
+centralized runtime state
+    ↓
+runtime-aware restore
+```
 
-* Top-app-only lifecycle
-* Top-app apply
-* Non-top-app restore
-* Exit restore
-* Companion-managed lifecycle
-* Minimal persistent in-app runtime footprint
+The companion manages:
 
-Example:
+* prop backup
+* fake prop apply
+* refcount state
+* lifecycle tracking
+* delayed restore
+* top-app monitoring
+
+---
+
+# resetprop Scope
+
+DCFG currently supports:
 
 ```json
-"resetprop": true
+"resetprop_scope": "main"
+```
+
+and:
+
+```json
+"resetprop_scope": "package"
+```
+
+---
+
+## main Scope
+
+```text
+Only the main app process participates in resetprop lifecycle.
 ```
 
 Behavior:
 
 ```text
-Target app top-app:
-    apply fake props
-
-Target app background:
-    restore original props
-
-Target app exit:
-    restore original props
+- child processes do not acquire resetprop session
+- only main process drives lifecycle
+- main process leaving top-app restores props
+- main process exit restores props
 ```
 
-This mode is designed to minimize persistent global property modification.
+This mode is lightweight and aggressive.
 
 ---
 
-## Runtime Hook Mode
+## package Scope
 
-Optional native runtime property interception.
-
-Supports:
-
-* Java `SystemProperties.get`
-* Common libc property access paths
-* `__system_property_get`
-* `__system_property_find`
-* single-property `__system_property_read_callback`
-
-Example:
-
-```json
-"prop_hook": "runtime"
+```text
+All package processes participate in top-app lifecycle tracking.
 ```
 
-Current runtime hook implementation focuses on compatibility with common property access paths.
+Behavior:
+
+```text
+- package shares one resetprop session
+- props apply once per package session
+- child processes participate in active_pids tracking
+- any top-app pid keeps session alive
+- entire package leaving top-app restores props
+```
+
+This mode is more stable for:
+
+* WebView apps
+* Chromium renderer processes
+* remote UI processes
+* multi-process apps
+
+---
+
+# Top-App Runtime Model
+
+DCFG restore logic is top-app driven.
+
+The runtime checks:
+
+```text
+/proc/<pid>/cgroup
+```
+
+and detects:
+
+```text
+top-app
+```
+
+Restore occurs when:
+
+```text
+- process exits
+or
+- process/package remains non-top-app for delay window
+```
+
+Current delayed restore:
+
+```text
+2000 ms
+```
+
+This avoids immediate restore during:
+
+* app switching
+* Activity transitions
+* renderer teardown
+* recent-task animations
+
+---
+
+# Config Cache Runtime
+
+DCFG supports a compiled runtime cache.
+
+The runtime primarily reads:
+
+```text
+config.cache
+```
+
+instead of reparsing JSON on every app launch.
+
+Benefits:
+
+* faster startup
+* lower runtime parse overhead
+* reduced allocation pressure
+* lower Zygisk process overhead
+
+Important:
+
+```text
+Editing config.json alone does not refresh cache.
+```
+
+You must rebuild cache after config changes.
+
+---
+
+# Rust Backend
+
+The current mainline uses the Rust resetprop backend.
+
+Architecture:
+
+```text
+C++ runtime
+    ↓
+Rust reset engine
+```
+
+Advantages:
+
+* lower runtime overhead
+* avoids external resetprop fork/exec cost
+* faster app launch
+* better runtime synchronization
+
+---
+
+# Classic Backend
+
+DCFG also provides a classic external resetprop backend.
+
+Architecture:
+
+```text
+C++ runtime
+    ↓
+external resetprop process
+```
+
+Characteristics:
+
+* smaller implementation complexity
+* slower runtime performance
+* higher process overhead
+* lighter dependency chain
+
+---
+
+# Build Variants
+
+## Mainline
+
+Rust backend runtime:
+
+```text
+build.sh
+build-debug.sh
+```
+
+Outputs:
+
+```text
+release/DCFG-release.zip
+```
+
+---
+
+## Classic
+
+External resetprop backend:
+
+```text
+build-classic.sh
+build-classic-debug.sh
+```
+
+Outputs:
+
+```text
+release/DCFG-classic-release.zip
+```
+
+---
+
+# Project Structure
+
+```text
+DCFG/
+├── build.sh
+├── build-debug.sh
+├── build-classic.sh
+├── build-classic-debug.sh
+├── README.md
+├── module/
+│   ├── module.prop
+│   ├── service.sh
+│   ├── customize.sh
+│   ├── config.example.json
+│   └── jni/
+│       ├── main.cpp
+│       ├── config.cpp
+│       ├── apply.cpp
+│       ├── system_props.cpp
+│       ├── reset_companion.cpp
+│       ├── reset_engine_exec.cpp
+│       ├── reset_engine_rust.cpp
+│       └── ...
+└── release/
+```
 
 ---
 
 # Configuration
 
-## Configuration Path
-
-DCFG uses a single configuration source:
-
-```text
-/data/adb/dcfg/config.json
-```
-
-Debug builds only:
-
-```text
-/data/adb/dcfg/dcfg.log
-```
-
----
-
-
-
-## Props Value Semantics
-
-Manual `props` entries support explicit value semantics:
-
-```text
-normal string
-    Set the property to this value.
-
-"__EMPTY__"
-    Keep the property present, but return an empty string.
-
-"__NULL__"
-    Make the property behave as missing/deleted.
-
-missing key
-    Do not touch this property; the original device value is used.
-```
-
-These semantics are independent from `mode`.
-
-`mode` controls where properties come from:
-
-```text
-none
-auto
-manual
-auto_manual
-```
-
-Manual props override auto-generated props. Therefore, a manual `__NULL__` can hide a property that would otherwise be generated by auto mapping.
-
----
-
-# Rule Fields
-
-## package
-
-Target package name.
+Example:
 
 ```json
-"package": "com.example.app"
+{
+  "version": 1,
+  "log": {
+    "level": "none"
+  },
+  "global": {
+    "apply_to_children": true,
+    "resetprop_policy": "top_app"
+  },
+  "rules": [
+    {
+      "package": "com.example.app",
+      "profile": "pixel9"
+    }
+  ],
+  "profiles": {
+    "pixel9": {
+      "enabled": true,
+      "auto_props": true,
+      "resetprop": true,
+      "resetprop_scope": "main",
+      "build": {
+        "BRAND": "google",
+        "MANUFACTURER": "Google",
+        "MODEL": "Pixel 9",
+        "DEVICE": "tokay",
+        "PRODUCT": "tokay"
+      },
+      "props": {
+        "ro.product.brand": "google",
+        "ro.product.manufacturer": "Google"
+      }
+    }
+  }
+}
 ```
+
 ---
 
-## profile
+# Configuration Semantics
 
-Selected spoof profile.
+## auto_props
 
 ```json
-"profile": "pixel_phone"
+"auto_props": true
 ```
+
+Automatically maps Build fields into property overrides.
+
 ---
 
-## mode
-
-Current supported value example:
+## props
 
 ```json
-"mode": "auto_manual"
+"props": {
+  "ro.product.brand": "google"
+}
 ```
 
-Supported values:
+Explicit property overrides.
 
-```text
-none
-auto
-manual
-auto_manual
-```
-
-Behavior:
-
-* Build fields handled automatically
-* Manual props merged on top
+Overrides take precedence over auto-generated mappings.
 
 ---
 
-## prop_hook
-
-Property virtualization mode.
-
-Values:
-
-```text
-none
-runtime
-```
-Recommended:
+## apply_to_children
 
 ```json
-"prop_hook": "none"
+"apply_to_children": true
 ```
 
-when using resetprop mode.
+Controls whether child app processes inherit matched runtime behavior.
 
 ---
 
-## resetprop
 
-Enable top-app-only resetprop lifecycle virtualization.
+# Logging
 
-```json
-"resetprop": true
-```
-
----
-
-# Runtime Architecture
-
-## Lightweight Path
-
-For unmatched applications:
+Release builds:
 
 ```text
-load
-→ no match
-→ dlclose
+DCFG_NO_LOG enabled
 ```
 
-For Build-only matched applications:
+Characteristics:
 
 ```text
-load
-→ apply Build patch
-→ optional resetprop IPC
-→ dlclose
+- no log.cpp
+- no -llog link
+- no runtime log file
+- no logcat output
 ```
 
-This minimizes persistent runtime presence.
-
----
-
-# Companion Process
-
-DCFG uses a companion process only when required.
-
-Examples:
-
-* resetprop lifecycle management
-* centralized top-app session monitor
-* prop-level backup/refcount/restore ownership
-
-Non-resetprop configurations do not require companion usage.
+Debug builds retain runtime logging.
 
 ---
 
 # Compatibility
 
-Tested with:
+Supported:
 
-* KernelSU
+* Magisk Zygisk
 * NeoZygisk
+* KernelSU
 * Android 12+
-* arm64-v8a
+
+Primary target:
+
+```text
+arm64-v8a
+```
 
 ---
 
-# Build
+# Goals
 
-## Requirements
+DCFG prioritizes:
 
-* Android NDK
-* CMake
-* Ninja
-* JDK 17+
-
----
-
-## Build matrix
-
-DCFG now uses one shared runtime source tree and selects only the resetprop backend at build time.
-
-```bash
-chmod +x build.sh build-debug.sh build-rust.sh build-rust-debug.sh
-```
-
-External resetprop backend:
-
-```bash
-./build.sh
-./build-debug.sh
-```
-
-Generated packages:
-
-```text
-release/DCFG-release.zip
-debug/DCFG-debug.zip
-```
-
-Rust internal resetprop backend:
-
-```bash
-rustup target add aarch64-linux-android
-export ANDROID_NDK_HOME=/path/to/android-ndk
-./build-rust.sh
-./build-rust-debug.sh
-```
-
-Generated packages:
-
-```text
-release/DCFG-rust-release.zip
-debug/DCFG-rust-debug.zip
-```
-
-All four build scripts compile and package in one step. The old separate `package.sh` / `package-debug.sh` flow has been removed.
+* minimal runtime footprint
+* strict per-app isolation
+* runtime-aware virtualization
+* reduced detection surface
+* stable top-app lifecycle handling
+* lightweight native-only architecture
 
 ---
 
-# Current Status
+# Non-Goals
 
-Current release status:
+DCFG intentionally does not provide:
 
-```text
-v1.0.0
-```
+* WebUI
+* LSPosed dependency
+* Java framework hooks
+* global device spoofing
+* persistent system-wide resetprop
 
-Validated:
-
-* Build virtualization
-* Java property reads
-* Native property reads
-* resetprop lifecycle restore
-* Top-app/background switching
-* dlclose behavior
-* Companion lifecycle
-* NeoZygisk compatibility
-
-
-Resetprop runtime is fixed to top-app behavior. No resetprop runtime policy field is used.
-
-## Rust resetprop backend
-
-The default `build.sh` / `build-debug.sh` scripts use the external `resetprop` backend.
-
-The Rust backend is selected only by `build-rust.sh` / `build-rust-debug.sh`. It provides internal resetprop calls through a small Rust FFI wrapper around KernelSU's `prop-rs-android` resetprop library. This keeps the C++ reset engine interface unchanged and only replaces the backend implementation.
-
-The Rust debug build script compiles the Rust static library with Cargo's debug profile, links it with `DCFG_RUST_PROFILE=debug`, enables `DCFG_DEBUG_BUILD=1`, uses debug service/customize scripts, compiles `log.cpp`, links `-llog`, and does not strip the final `arm64-v8a.so`. Debug builds prioritize observability over size/performance.
-
-Notes:
-
-- The upper-level centralized top-app session monitor, companion protocol, and config parsing are shared by both backends.
-- `reset_engine.h` is the common backend interface.
-- External builds compile `reset_engine_exec.cpp`.
-- Rust release builds compile `reset_engine_rust.cpp` and link `module/rust/target/aarch64-linux-android/release/libdcfg_resetprop_rust.a`.
-- Rust debug builds compile `reset_engine_rust.cpp` and link `module/rust/target/aarch64-linux-android/debug/libdcfg_resetprop_rust.a`.
-- The Rust backend uses `prop-rs-android` from KernelSU's `ksu_props` repository.
-
-
-## DCFG_rust build note
-
-The Rust resetprop backend is the high-performance DCFG_rust variant. It avoids per-prop external `resetprop` fork/exec by linking a Rust staticlib and calling the resetprop API through C ABI.
-
-Release Rust builds intentionally use a size-oriented Rust release profile (`lto`, `opt-level = "z"`, `panic = "abort"`, `strip`) and strip the final `arm64-v8a.so` after linking.
-
-Rust debug builds intentionally do not use that size-oriented release path: they use Cargo debug output and leave the final library unstripped for log-driven debugging.
-
-Current dependency mode still uses the upstream `prop-rs-android` crate from `Kernel-SU/ksu_props`. A further size reduction would require vendoring only the minimal resetprop sources from that crate.
-
-## Experimental compiled config cache
-
-This build adds an experimental runtime cache at `/data/adb/dcfg/config.cache`.
-
-`config.json` remains the user-editable source of truth. Runtime reads `config.cache` only. Cache rebuild is handled by `bin/dcfg-cache`, install/boot service, or module action.
-
-The cache is a single line-oriented runtime file containing:
-
-- global hook_children
-- per-package compiled entries
-- original profile Build / VERSION fields for Java-layer spoofing
-- effective resetprop/SystemProperties props after auto mapping and manual overrides
-- a `spoof` key list for future companion-owned original snapshot work
-
-Unmatched apps only need the per-package entry lookup path and do not parse the original JSON profile tree when the cache is fresh. Resetprop apply/restore behavior is unchanged in this version.
-
-## Compiled Config Cache
-
-DCFG now includes an experimental compiled config cache layer.
-
-- User source config remains `/data/adb/dcfg/config.json`.
-- The module-side runtime cache is `config.cache` in the module directory.
-- `bin/dcfg-cache` compiles source config into cache during install/boot service.
-- App-side runtime reads `config.cache` through `getModuleDir()` only. It never falls back to `config.json`.
-- `auto_props` is expanded only during cache compilation through the shared `props_mapping.cpp` path. Runtime reads effective props from cache and does not auto-map again on the cache path.
-- The cache also contains a `spoof` key list for the later companion-owned original snapshot / restore model.
-- Resetprop is fixed to top-app runtime behavior; no runtime policy option is used.
-
-This version does not change resetprop apply/restore behavior yet.
-
-## Compiled cache rebuild policy
-
-Release runtime reads `config.cache` only. It does not parse `config.json`, does not check freshness on every app start, and does not execute `dcfg-cache` from the Zygisk/zygote context.
-
-After editing `/data/adb/dcfg/config.json`, rebuild cache explicitly:
-
-```sh
-su -c '/data/adb/modules/dcfg/bin/dcfg-cache /data/adb/dcfg/config.json /data/adb/modules/dcfg/config.cache'
-```
-
-Or use the module action if supported by the manager. Install and boot service also compile cache once and set `bin/dcfg-cache` executable.
