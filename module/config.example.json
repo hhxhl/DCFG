@@ -1,0 +1,149 @@
+{
+  "version": 1,
+
+  "global": {
+    "hook_children": true,
+    "resetprop_scope": "package"
+  },
+
+  "rules": [
+    {
+      "package": "com.example.phone",
+      "profile": "pixel8_phone",
+      "mode": "auto_manual",
+      "prop_hook": "none",
+      "resetprop": true
+    },
+    {
+      "package": "com.example.tablet",
+      "profile": "tablet_template",
+      "mode": "auto_manual",
+      "prop_hook": "none",
+      "resetprop": true
+    },
+    {
+      "package": "com.example.xiaomi",
+      "profile": "xiaomi_m2105k81c",
+      "mode": "auto_manual",
+      "prop_hook": "none",
+      "resetprop": true
+    }
+  ],
+
+  "profiles": {
+
+    "pixel8_phone": {
+
+      "build": {
+        "BRAND": "google",
+        "MANUFACTURER": "Google",
+        "DEVICE": "shiba",
+        "PRODUCT": "shiba",
+        "MODEL": "Pixel 8",
+
+        "FINGERPRINT": "google/shiba/shiba:15/AP4A.250205.002/13000000:user/release-keys",
+        "ID": "AP4A.250205.002",
+        "DISPLAY": "AP4A.250205.002",
+
+        "TYPE": "user",
+        "TAGS": "release-keys",
+
+        "HARDWARE": "shiba"
+      },
+
+      "version_info": {
+        "SDK_INT": 35,
+        "SDK": "35",
+        "SDK_INT_FULL": 35,
+
+        "RELEASE": "15",
+        "CODENAME": "REL",
+
+        "INCREMENTAL": "13000000",
+        "SECURITY_PATCH": "2025-02-05"
+      },
+
+      "props": {
+      }
+    },
+
+    "tablet_template": {
+
+      "build": {
+        "BRAND": "google",
+        "MANUFACTURER": "Google",
+        "DEVICE": "tangorpro",
+        "PRODUCT": "tangorpro",
+        "MODEL": "Pixel Tablet",
+
+        "FINGERPRINT": "google/tangorpro/tangorpro:15/AP4A.250205.002/13000000:user/release-keys",
+        "ID": "AP4A.250205.002",
+        "DISPLAY": "AP4A.250205.002",
+
+        "TYPE": "user",
+        "TAGS": "release-keys",
+
+        "HARDWARE": "tangorpro"
+      },
+
+      "version_info": {
+        "SDK_INT": 35,
+        "SDK": "35",
+        "SDK_INT_FULL": 35,
+
+        "RELEASE": "15",
+        "CODENAME": "REL",
+
+        "INCREMENTAL": "13000000",
+        "SECURITY_PATCH": "2025-02-05"
+      },
+
+      "props": {
+        "ro.build.characteristics": "tablet"
+      }
+    },
+
+    "xiaomi_m2105k81c": {
+
+      "build": {
+        "BRAND": "Xiaomi",
+        "MANUFACTURER": "Xiaomi",
+        "DEVICE": "enuma",
+        "PRODUCT": "enuma",
+        "MODEL": "M2105K81C",
+
+        "FINGERPRINT": "Xiaomi/enuma/enuma:13/TKQ1.221114.001/V14.0.6.0.TKYCNXM:user/release-keys",
+
+        "SOC_MANUFACTURER": "QTI",
+        "SOC_MODEL": "SM8250-AC",
+
+        "ID": "TKQ1.221114.001",
+        "DISPLAY": "TKQ1.221114.001",
+
+        "TYPE": "user",
+        "TAGS": "release-keys",
+
+        "HARDWARE": "qcom",
+        "BOARD": "kona"
+      },
+
+      "version_info": {
+        "SDK_INT": 33,
+        "SDK": "33",
+        "SDK_INT_FULL": 3300001,
+        "SDK_FULL": "33.1",
+
+        "RELEASE": "13",
+        "CODENAME": "REL",
+
+        "INCREMENTAL": "V14.0.6.0.TKYCNXM",
+        "SECURITY_PATCH": "2024-10-01"
+      },
+
+      "props": {
+        "ro.build.characteristics": "tablet",
+        "persist.sys.muiltdisplay_type": "2"
+      }
+    }
+  }
+}

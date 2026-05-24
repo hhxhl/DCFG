@@ -1,0 +1,23 @@
+[package]
+name = "dcfg_resetprop_rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "dcfg_resetprop_rust"
+crate-type = ["staticlib"]
+
+[dependencies]
+libc = "0.2"
+prop-rs-android = { git = "https://github.com/Kernel-SU/ksu_props" }
+
+
+[profile.release]
+# Size-oriented Rust backend build for the DCFG_rust variant.
+# The speed win comes from avoiding fork/exec resetprop; keeping the Rust
+# payload compact is more important than maximum Rust-side micro-optimization.
+strip = true
+lto = true
+codegen-units = 1
+opt-level = "z"
+panic = "abort"

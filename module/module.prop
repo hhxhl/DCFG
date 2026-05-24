@@ -1,0 +1,6 @@
+id=dcfg
+name=DCFG
+version=1.0.0
+versionCode=100
+author=hhxhl
+description=Per-app virtual device environment via Zygisk

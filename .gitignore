@@ -1,0 +1,14 @@
+/build/
+/out/
+/obj/
+/libs/
+/.gradle/
+/.idea/
+
+*.iml
+*.o
+*.a
+*.so
+*.log
+
+local.properties
