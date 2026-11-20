@@ -8,25 +8,31 @@
 
   "rules": [
     {
-      "package": "com.example.phone",
       "profile": "pixel8_phone",
       "mode": "auto_manual",
       "prop_hook": "none",
-      "resetprop": true
+      "resetprop": true,
+      "packages": [
+        "com.example.phone"
+      ]
     },
     {
-      "package": "com.example.tablet",
       "profile": "tablet_template",
       "mode": "auto_manual",
       "prop_hook": "none",
-      "resetprop": true
+      "resetprop": true,
+      "packages": [
+        "com.example.tablet"
+      ]
     },
     {
-      "package": "com.example.xiaomi",
       "profile": "xiaomi_m2105k81c",
       "mode": "auto_manual",
       "prop_hook": "none",
-      "resetprop": true
+      "resetprop": true,
+      "packages": [
+        "com.example.xiaomi"
+      ]
     }
   ],
 

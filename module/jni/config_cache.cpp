@@ -241,6 +241,42 @@ static bool find_rule_objects(const std::string &json, std::vector<std::string> 
     return !rules_out.empty();
 }
 
+// Parse the new rule-level packages array. Legacy "package" is not supported.
+// Reject empty, non-string, or malformed arrays rather than silently compiling
+// a cache that contains no matching entries.
+static bool parse_rule_packages(
+        const std::string &rule_obj,
+        std::vector<std::string> &packages
+) {
+    packages.clear();
+    const std::string array = extract_array_after_key(rule_obj, "packages");
+    if (array.empty()) return false;
+
+    size_t pos = 1; // Skip '['.
+    std::set<std::string> seen;
+    for (;;) {
+        skip_ws(array, pos);
+        if (pos >= array.size()) return false;
+        if (array[pos] == ']') return !packages.empty() && pos == array.size() - 1;
+
+        std::string package_name;
+        if (!read_json_string(array, pos, package_name) || package_name.empty()) {
+            return false;
+        }
+        if (seen.insert(package_name).second) {
+            packages.push_back(std::move(package_name));
+        }
+
+        skip_ws(array, pos);
+        if (pos >= array.size()) return false;
+        if (array[pos] == ']') return pos == array.size() - 1;
+        if (array[pos] != ',') return false;
+        ++pos;
+        skip_ws(array, pos);
+        if (pos >= array.size() || array[pos] == ']') return false;
+    }
+}
+
 static std::string find_profile_object_cache(const std::string &json, const std::string &profile_name) {
     auto profiles_key = json.find("\"profiles\"");
     if (profiles_key == std::string::npos) return {};
@@ -341,9 +377,13 @@ bool dcfg_rebuild_config_cache_file(const char *config_path, const char *cache_p
 
     size_t entry_count = 0;
     for (const auto &rule_obj : rule_objs) {
-        std::string package_name = find_string(rule_obj, "package");
+        std::vector<std::string> packages;
+        if (!parse_rule_packages(rule_obj, packages)) {
+            std::fprintf(stderr, "dcfg-cache: rule requires a non-empty packages string array\n");
+            return false;
+        }
         std::string profile_name = find_string(rule_obj, "profile");
-        if (package_name.empty() || profile_name.empty()) continue;
+        if (profile_name.empty()) continue;
 
         std::string po = find_profile_object_cache(json, profile_name);
         if (po.empty()) continue;
@@ -365,30 +405,37 @@ bool dcfg_rebuild_config_cache_file(const char *config_path, const char *cache_p
         // This is the only auto_props/effective-props expansion point in the cache path.
         PropMap effective = dcfg_make_final_props(source);
 
-        out << "entry|" << esc(package_name) << "|" << esc(profile_name) << "|"
-            << props_mode_name_cache(source_mode) << "|"
-            << props_hook_mode_name_cache(hook_mode) << "|"
-            << (resetprop_enabled ? "1" : "0") << "\n";
-
+        // Preserve the existing per-package cache format and runtime matcher.
+        // Compute the effective profile once, then emit an entry for each package.
+        std::ostringstream entry_body;
         for (const auto &it : source.build) {
             if (!it.first.empty() && !it.second.empty() && !is_ignore_value(it.second)) {
-                out << "build|" << esc(it.first) << "|" << esc(it.second) << "\n";
+                entry_body << "build|" << esc(it.first) << "|" << esc(it.second) << "\n";
             }
         }
         for (const auto &it : source.version_info) {
             if (!it.first.empty() && !it.second.empty() && !is_ignore_value(it.second)) {
-                out << "version|" << esc(it.first) << "|" << esc(it.second) << "\n";
+                entry_body << "version|" << esc(it.first) << "|" << esc(it.second) << "\n";
             }
         }
         for (const auto &it : effective) {
             if (it.first.empty()) continue;
             std::string value = prop_value_to_cache(it.second);
             if (value.empty() || is_ignore_value(value)) continue;
-            out << "prop|" << esc(it.first) << "|" << esc(value) << "\n";
+            entry_body << "prop|" << esc(it.first) << "|" << esc(value) << "\n";
             if (starts_with_ro(it.first)) spoof_keys.insert(it.first);
         }
-        out << "endentry\n";
-        ++entry_count;
+        entry_body << "endentry\n";
+
+        const std::string entry_content = entry_body.str();
+        for (const auto &package_name : packages) {
+            out << "entry|" << esc(package_name) << "|" << esc(profile_name) << "|"
+                << props_mode_name_cache(source_mode) << "|"
+                << props_hook_mode_name_cache(hook_mode) << "|"
+                << (resetprop_enabled ? "1" : "0") << "\n"
+                << entry_content;
+            ++entry_count;
+        }
     }
 
     for (const auto &key : spoof_keys) out << "spoof|" << esc(key) << "\n";

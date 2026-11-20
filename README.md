@@ -321,84 +321,58 @@ DCFG/
 
 # Configuration
 
+Each rule uses a `packages` array (one or more package names) as the last
+field. The old `package` field is not supported. All listed apps share the
+rule's profile, mode, property hook, and resetprop options; app processes still
+match independently.
+
 Example:
 
 ```json
 {
   "version": 1,
-  "log": {
-    "level": "none"
-  },
   "global": {
-    "apply_to_children": true,
-    "resetprop_policy": "top_app"
+    "hook_children": true,
+    "resetprop_scope": "package"
   },
   "rules": [
     {
-      "package": "com.example.app",
-      "profile": "pixel9"
+      "profile": "xiaomi_m2105k81c",
+      "mode": "auto_manual",
+      "prop_hook": "none",
+      "resetprop": true,
+      "packages": [
+        "com.eltavine.duckdetector",
+        "com.example.app2"
+      ]
     }
   ],
   "profiles": {
-    "pixel9": {
-      "enabled": true,
-      "auto_props": true,
-      "resetprop": true,
-      "resetprop_scope": "main",
+    "xiaomi_m2105k81c": {
       "build": {
-        "BRAND": "google",
-        "MANUFACTURER": "Google",
-        "MODEL": "Pixel 9",
-        "DEVICE": "tokay",
-        "PRODUCT": "tokay"
+        "BRAND": "Xiaomi",
+        "MODEL": "M2105K81C"
       },
-      "props": {
-        "ro.product.brand": "google",
-        "ro.product.manufacturer": "Google"
-      }
+      "version_info": {},
+      "props": {}
     }
   }
 }
 ```
 
----
-
-# Configuration Semantics
-
-## auto_props
-
-```json
-"auto_props": true
-```
-
-Automatically maps Build fields into property overrides.
-
----
-
-## props
-
-```json
-"props": {
-  "ro.product.brand": "google"
-}
-```
-
-Explicit property overrides.
-
-Overrides take precedence over auto-generated mappings.
+- `packages` must be a non-empty array of non-empty strings. The cache builder
+  rejects missing, legacy `package`, or malformed `packages` values.
+- One or more packages can share a rule. The cache compiler creates a separate
+  entry for each package without changing the per-app runtime matcher.
+- Existing `/data/adb/dcfg/config.json` files must be migrated before using a
+  build with this change; after editing, rebuild `config.cache` using module
+  Action or restart the device.
+- `mode=auto_manual` combines automatic Build-to-prop mapping with explicit
+  `profiles.<name>.props` overrides; the latter take precedence.
+- `global.hook_children` controls child-process matching.
+- `global.resetprop_scope` remains either `main` or `package`.
 
 ---
-
-## apply_to_children
-
-```json
-"apply_to_children": true
-```
-
-Controls whether child app processes inherit matched runtime behavior.
-
----
-
 
 # Logging
 
