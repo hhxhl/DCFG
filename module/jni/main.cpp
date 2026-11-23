@@ -74,9 +74,9 @@ public:
         api_ = api;
         env_ = env;
 
-        int module_fd = api ? api->getModuleDir() : -1;
-        dcfg_set_module_dir_fd(module_fd);
-
+        // Do not open the module directory during onLoad. The Zygisk API
+        // exposes it during pre-specialization, and holding its fd through
+        // specialization would expose /data/adb/modules/dcfg to the app.
 #ifndef DCFG_NO_LOG
         // Keep onLoad lightweight for every process.
         // Companion logging is connected lazily only after a package rule matches
@@ -124,7 +124,12 @@ public:
                 && process_name_ != package_name_
                 && process_name_.find(package_name_ + ":") == 0;
 
+        // The compiled config cache is only needed for this lookup.
+        // Open the module directory in preAppSpecialize and close it
+        // immediately afterward, before the process loses privileges.
+        dcfg_set_module_dir_fd(api_ ? api_->getModuleDir() : -1);
         auto m = dcfg_load_and_match_config(package_name_, is_child_process_);
+        dcfg_set_module_dir_fd(-1);
 
         if (!m.matched) {
             dlclose_module_if_possible(api_);
